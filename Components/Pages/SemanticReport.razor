@@ -1,0 +1,11 @@
+@page "/semantic"
+@rendermode InteractiveServer
+
+<PageTitle>Semantic report</PageTitle>
+
+<div class="report-page">
+    <h1>Semantic report</h1>
+    <p class="hint">Uses Power BI JS <code>loaded</code> / <code>rendered</code> for client timing.</p>
+
+    <PowerBiReportViewer @key="@("semantic")" Kind="EmbedReportKind.Semantic" />
+</div>

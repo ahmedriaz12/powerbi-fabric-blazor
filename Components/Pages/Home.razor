@@ -1,0 +1,24 @@
+@page "/"
+
+<PageTitle>Home</PageTitle>
+
+<h1>Fabric / Power BI embed sample</h1>
+
+<p>
+    This app demonstrates <strong>server-side</strong> embed token generation (service principal) and
+    Blazor lifecycle patterns for switching between a semantic-model report and a paginated report.
+</p>
+
+<ol class="steps">
+    <li>
+        Copy values into configuration or <code>dotnet user-secrets</code> (see comments in
+        <code>appsettings.Development.json</code>). Never commit the client secret.
+    </li>
+    <li>
+        In Power BI / Fabric admin: allow service principals; add your app to the workspace.
+    </li>
+    <li>
+        Open <a href="/semantic">Semantic report</a> and <a href="/paginated">Paginated report</a>.
+        If the paginated report uses semantic models, set <code>PowerBi:PaginatedDatasetIds</code>.
+    </li>
+</ol>

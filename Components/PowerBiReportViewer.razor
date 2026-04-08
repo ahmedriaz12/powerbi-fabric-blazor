@@ -1,0 +1,106 @@
+@rendermode InteractiveServer
+@inject HttpClient Http
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+@inject ILogger<PowerBiReportViewer> Logger
+
+<section class="viewer-wrap">
+    <header class="viewer-header">
+        <span class="badge">@Kind</span>
+        @if (_config is not null)
+        {
+            <span class="timings">
+                Server timings (ms):
+                @foreach (var kv in _config.TimingsMs)
+                {
+                    <code>@kv.Key=@kv.Value</code>
+                }
+                · mode: @_config.TokenMode
+            </span>
+        }
+    </header>
+
+    @if (_error is not null)
+    {
+        <div class="alert" role="alert">@_error</div>
+    }
+    else if (_loading)
+    {
+        <p class="loading">Loading embed configuration…</p>
+    }
+
+    <div id="@_containerId" class="embed-host @( _loading ? "embed-host--hidden" : null )"></div>
+
+    @if (_clientTiming is not null)
+    {
+        <p class="client-timing">Client embed phase: @_clientTiming</p>
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired]
+    public EmbedReportKind Kind { get; set; }
+
+    private readonly string _containerId = "pbi-" + Guid.NewGuid().ToString("n");
+    private bool _loading = true;
+    private string? _error;
+    private EmbedConfigDto? _config;
+    private string? _clientTiming;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+            return;
+
+        try
+        {
+            var kindStr = Kind == EmbedReportKind.Semantic ? "Semantic" : "Paginated";
+            var uri = Nav.ToAbsoluteUri($"/api/embed-config?kind={Uri.EscapeDataString(kindStr)}");
+            using var response = await Http.GetAsync(uri);
+            var raw = await response.Content.ReadAsStringAsync();
+            if (!response.IsSuccessStatusCode)
+            {
+                _error = $"Embed API {(int)response.StatusCode}: {raw}";
+                _loading = false;
+                StateHasChanged();
+                return;
+            }
+
+            _config = System.Text.Json.JsonSerializer.Deserialize<EmbedConfigDto>(raw, ApiJson.Options);
+            if (_config is null || string.IsNullOrEmpty(_config.EmbedToken))
+            {
+                _error = "Empty or invalid embed configuration from API.";
+                _loading = false;
+                StateHasChanged();
+                return;
+            }
+
+            _loading = false;
+            StateHasChanged();
+
+            await Task.Delay(50);
+
+            var fn = Kind == EmbedReportKind.Semantic ? "pbiEmbed.embedSemantic" : "pbiEmbed.embedPaginated";
+            var result = await JS.InvokeAsync<System.Text.Json.JsonElement>(
+                fn,
+                _containerId,
+                _config.EmbedUrl,
+                _config.EmbedToken,
+                _config.ReportId);
+
+            if (result.ValueKind == System.Text.Json.JsonValueKind.Object &&
+                result.TryGetProperty("clientMs", out var ms))
+                _clientTiming = $"~{ms.GetInt32()} ms ({result.GetProperty("signal").GetString()})";
+            else
+                _clientTiming = result.ToString();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Embed failed");
+            _error = ex.Message;
+            _loading = false;
+        }
+
+        StateHasChanged();
+    }
+}

@@ -1,0 +1,14 @@
+@page "/paginated"
+@rendermode InteractiveServer
+
+<PageTitle>Paginated report</PageTitle>
+
+<div class="report-page">
+    <h1>Paginated report</h1>
+    <p class="hint">
+        Microsoft does not support <code>loaded</code> / <code>rendered</code> for paginated embeds —
+        the sample uses a short heuristic timer after embed (see <code>powerbi-embed.js</code>).
+    </p>
+
+    <PowerBiReportViewer @key="@("paginated")" Kind="EmbedReportKind.Paginated" />
+</div>
