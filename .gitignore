@@ -1,0 +1,41 @@
+bin/
+obj/
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Local overrides (secrets, machine-specific)
+**/appsettings.*.local.json
+**/appsettings.Local.json
+secrets.json
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Certificates / keys
+*.pfx
+*.p12
+*.key
+*.pem
+*.snk
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.idea/
+*.swp
+*~
+
+# Test / coverage
+TestResults/
+coverage/
+*.coverage
+*.coveragexml
+
+# Logs
+*.log
+logs/

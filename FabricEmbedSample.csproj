@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>FabricEmbedSample</RootNamespace>
+    <AssemblyName>FabricEmbedSample</AssemblyName>
+    <UserSecretsId>72a3c4f1-8b2d-4e3f-9a1c-fabricembedsample</UserSecretsId>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Identity.Client" Version="4.66.1" />
+  </ItemGroup>
+
+</Project>
