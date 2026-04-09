@@ -38,19 +38,37 @@ Optional:
 |-----|------|
 | `PowerBi:SemanticDatasetId` | If **GET report** does not return `datasetId` but you still need **Generate Token V2** (e.g. DirectLake). Usually omitted if the API returns `datasetId`. |
 | `PowerBi:PaginatedDatasetIds` | JSON array of dataset GUIDs if the paginated report uses **semantic models** and **V2** token is required. Example in `appsettings.json`. |
+| `PowerBi:EnableEffectiveIdentityTest` | When `true`, allows `effectiveUsername` / `effectiveRoles` on `/api/embed-config` outside Development (e.g. staging). Default `false`. |
 
 IDs should be **plain GUIDs** (no `<>`, no query strings). The app normalizes common copy-paste mistakes.
 
+## Row-level security (RLS) and effective identity
+
+The service principal has no end-user context by default. For dataset RLS, the embed token can include an **effective identity** (`identities[]` on the Generate Token call): a `username` string, optional `roles`, and the dataset GUIDs that identity applies to. In the model, `USERNAME()` / `USERPRINCIPALNAME()` resolve to that `username` inside role filters—so whatever your app puts in the token must match how you wrote the DAX (portal id, email, etc.).
+
+Semantic and paginated reports both consume the same idea when they hit a **Power BI dataset**: rules are on the model. If an RDL talks to SQL (or something else) directly, you handle filtering there or via report parameters instead.
+
+Typical pattern: one role in the dataset with something like `[UserKey] = USERNAME()`, publish, then have your API set `username` from the signed-in user (from your IdP claims) when generating the token. You usually do **not** create one role per user; you pass different `username` values per request. If the token includes `roles`, names must match roles defined on the dataset.
+
+### Testing in this repo
+
+The **Semantic report** page has inputs for a test `username` and optional role names, plus **Apply & reload embed**. That only works when `ASPNETCORE_ENVIRONMENT=Development` or `PowerBi:EnableEffectiveIdentityTest` is `true` (see table above). The UI shows what the server sent so you can compare it to your model—**in production, derive the user from server-side auth**, not from a client field.
+
+Some datasets (notably certain DirectLake / Fabric setups) return **403** with *“Creating embed token with effective identity is not supported for this datasource”*. That comes from the Power BI API, not a bug in this app; check Microsoft’s current guidance for your storage mode and consider validating with a small imported model if you need to prove the flow end-to-end.
+
 ## What this sample demonstrates
 
-- **MSAL** confidential client (singleton) + **`IHttpClientFactory`** for Power BI REST
-- **Semantic / DirectLake**: **Generate Token V2** when a dataset id is available (V1 is not valid for DirectLake)
-- **Paginated**: V1 or V2 depending on config; JS uses a **heuristic** for readiness (paginated embed does not support `loaded` / `rendered` per Microsoft)
-- Blazor: embed container **height + iframe** layout; **`@key`** on viewers when switching routes
+- MSAL confidential client + `IHttpClientFactory` for Power BI REST
+- Semantic: Generate Token V2 when a dataset id is available (required for DirectLake)
+- Paginated: V1 or V2 depending on config; JS uses a short timer for readiness (paginated embed doesn’t expose reliable `rendered` events)
+- Optional RLS hook: `identities` on the token when testing from `/api/embed-config` + semantic page
+- Layout: fixed-height embed host and iframe fill
 
 ## API (local)
 
-`GET /api/embed-config?kind=Semantic` or `kind=Paginated` returns JSON with `embedToken`, `embedUrl`, and server **timings** (for debugging).
+`GET /api/embed-config?kind=Semantic|Paginated` returns `embedToken`, `embedUrl`, timings, and `tokenMode`.
+
+For RLS testing (Development or `EnableEffectiveIdentityTest`): add `effectiveUsername` and optionally `effectiveRoles` (comma-separated). The JSON then includes `effectiveIdentity` echoing what went into `identities[]` so you can verify against your dataset.
 
 ## References
 

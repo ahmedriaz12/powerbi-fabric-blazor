@@ -37,7 +37,10 @@ public sealed class PowerBiEmbedService
         _logger = logger;
     }
 
-    public async Task<EmbedConfigDto> GetEmbedConfigAsync(EmbedReportKind kind, CancellationToken cancellationToken = default)
+    public async Task<EmbedConfigDto> GetEmbedConfigAsync(
+        EmbedReportKind kind,
+        EffectiveIdentityInput? effectiveIdentity = null,
+        CancellationToken cancellationToken = default)
     {
         ValidateOptions();
 
@@ -63,6 +66,14 @@ public sealed class PowerBiEmbedService
         if (string.IsNullOrWhiteSpace(report.EmbedUrl))
             throw new InvalidOperationException("Power BI returned no embedUrl for this report. Check workspace and report IDs.");
 
+        EffectiveIdentityEchoDto? identityEcho = null;
+        if (effectiveIdentity is not null && !string.IsNullOrWhiteSpace(effectiveIdentity.Username))
+            identityEcho = new EffectiveIdentityEchoDto
+            {
+                Username = effectiveIdentity.Username.Trim(),
+                Roles = effectiveIdentity.Roles.ToList()
+            };
+
         string token;
         DateTimeOffset? expiration;
         string tokenMode;
@@ -77,34 +88,62 @@ public sealed class PowerBiEmbedService
 
             if (!string.IsNullOrWhiteSpace(semanticDataset))
             {
+                if (identityEcho is not null)
+                    identityEcho.DatasetIds = new[] { semanticDataset };
+
                 (token, expiration) = await GenerateTokenV2Async(
                         http,
                         powerBiAccessToken,
                         reportId,
                         [semanticDataset],
+                        effectiveIdentity,
                         cancellationToken)
                     .ConfigureAwait(false);
-                tokenMode = "GenerateToken V2 (semantic + dataset; DirectLake / Fabric)";
+                tokenMode = effectiveIdentity is { Username: var u } && !string.IsNullOrWhiteSpace(u)
+                    ? "GenerateToken V2 (semantic + dataset + EffectiveIdentity)"
+                    : "GenerateToken V2 (semantic + dataset; DirectLake / Fabric)";
             }
             else
             {
-                (token, expiration) = await GenerateTokenReportV1Async(http, powerBiAccessToken, workspaceId, reportId, cancellationToken)
+                var dsForV1Identity = report.DatasetId;
+                if (identityEcho is not null)
+                {
+                    if (string.IsNullOrWhiteSpace(dsForV1Identity))
+                        throw new InvalidOperationException(
+                            "Effective identity requires a dataset id on the report. Set PowerBi:SemanticDatasetId or use a report that returns datasetId.");
+                    identityEcho.DatasetIds = new[] { dsForV1Identity };
+                }
+
+                (token, expiration) = await GenerateTokenReportV1Async(
+                        http,
+                        powerBiAccessToken,
+                        workspaceId,
+                        reportId,
+                        effectiveIdentity,
+                        dsForV1Identity,
+                        cancellationToken)
                     .ConfigureAwait(false);
-                tokenMode = "GenerateToken (report in group)";
+                tokenMode = effectiveIdentity is { Username: var u2 } && !string.IsNullOrWhiteSpace(u2)
+                    ? "GenerateToken (report in group + EffectiveIdentity)"
+                    : "GenerateToken (report in group)";
             }
         }
         else
         {
             (token, expiration, tokenMode) = await GenerateTokenForPaginatedAsync(
-                http, powerBiAccessToken, workspaceId, reportId, cancellationToken).ConfigureAwait(false);
+                http, powerBiAccessToken, workspaceId, reportId, report, effectiveIdentity, cancellationToken).ConfigureAwait(false);
+            if (identityEcho is not null && _options.PaginatedDatasetIds is { Length: > 0 })
+                identityEcho.DatasetIds = _options.PaginatedDatasetIds;
+            else if (identityEcho is not null && !string.IsNullOrWhiteSpace(report.DatasetId))
+                identityEcho.DatasetIds = new[] { report.DatasetId };
         }
 
         timings["generate_embed_token_ms"] = tokenSw.ElapsedMilliseconds;
         timings["total_server_ms"] = swTotal.ElapsedMilliseconds;
 
         _logger.LogInformation(
-            "Embed config for {Kind}: tokenMode={TokenMode}, timings={Timings}",
-            kind, tokenMode, timings);
+            "Embed config for {Kind}: tokenMode={TokenMode}, timings={Timings}, effectiveIdentity={HasId}",
+            kind, tokenMode, timings, identityEcho is not null);
 
         return new EmbedConfigDto
         {
@@ -114,7 +153,8 @@ public sealed class PowerBiEmbedService
             Expiration = expiration,
             Kind = kind,
             TimingsMs = timings,
-            TokenMode = tokenMode
+            TokenMode = tokenMode,
+            EffectiveIdentity = identityEcho
         };
     }
 
@@ -123,21 +163,36 @@ public sealed class PowerBiEmbedService
         string powerBiAccessToken,
         string workspaceId,
         string reportId,
+        PowerBiReportApiResponse reportMeta,
+        EffectiveIdentityInput? effectiveIdentity,
         CancellationToken ct)
     {
         var datasetIds = _options.PaginatedDatasetIds;
         if (datasetIds is { Length: > 0 })
         {
-            var (t, e) = await GenerateTokenV2Async(http, powerBiAccessToken, reportId, datasetIds, ct)
+            var (t, e) = await GenerateTokenV2Async(http, powerBiAccessToken, reportId, datasetIds, effectiveIdentity, ct)
                 .ConfigureAwait(false);
-            return (t, e, "GenerateToken V2 (datasets + report, no targetWorkspaces)");
+            var mode = effectiveIdentity is { Username: var u } && !string.IsNullOrWhiteSpace(u)
+                ? "GenerateToken V2 (paginated + datasets + EffectiveIdentity)"
+                : "GenerateToken V2 (datasets + report, no targetWorkspaces)";
+            return (t, e, mode);
         }
 
         try
         {
-            var (t, e) = await GenerateTokenReportV1Async(http, powerBiAccessToken, workspaceId, reportId, ct)
+            var (t, e) = await GenerateTokenReportV1Async(
+                    http,
+                    powerBiAccessToken,
+                    workspaceId,
+                    reportId,
+                    effectiveIdentity,
+                    reportMeta.DatasetId,
+                    ct)
                 .ConfigureAwait(false);
-            return (t, e, "GenerateToken (report in group) — paginated without dataset list");
+            var mode = effectiveIdentity is { Username: var u } && !string.IsNullOrWhiteSpace(u)
+                ? "GenerateToken (paginated V1 + EffectiveIdentity)"
+                : "GenerateToken (report in group) — paginated without dataset list";
+            return (t, e, mode);
         }
         catch (HttpRequestException ex)
         {
@@ -200,10 +255,13 @@ public sealed class PowerBiEmbedService
         string bearerToken,
         string groupId,
         string reportId,
+        EffectiveIdentityInput? effectiveIdentity,
+        string? reportDatasetId,
         CancellationToken ct)
     {
         var url = $"groups/{Uri.EscapeDataString(groupId)}/reports/{Uri.EscapeDataString(reportId)}/GenerateToken";
-        var body = JsonSerializer.Serialize(new { accessLevel = "View" }, JsonOptions);
+        object bodyObj = BuildV1TokenBody(effectiveIdentity, reportDatasetId);
+        var body = JsonSerializer.Serialize(bodyObj, JsonOptions);
         using var content = new StringContent(body, Encoding.UTF8, "application/json");
         using var request = new HttpRequestMessage(HttpMethod.Post, url) { Content = content };
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", bearerToken);
@@ -225,22 +283,28 @@ public sealed class PowerBiEmbedService
         string bearerToken,
         string reportId,
         string[] datasetIds,
+        EffectiveIdentityInput? effectiveIdentity,
         CancellationToken ct)
     {
+        var trimmedDatasets = datasetIds
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Select(id => id.Trim())
+            .ToArray();
+
         var requestBody = new GenerateTokenV2Request
         {
             Reports =
             [
                 new GenerateTokenV2ReportRef { Id = reportId, AllowEdit = false }
             ],
-            Datasets = datasetIds
-                .Where(id => !string.IsNullOrWhiteSpace(id))
+            Datasets = trimmedDatasets
                 .Select(id => new GenerateTokenV2DatasetRef
                 {
-                    Id = id.Trim(),
+                    Id = id,
                     XmlaPermissions = "ReadOnly"
                 })
-                .ToList()
+                .ToList(),
+            Identities = BuildIdentitiesForApi(effectiveIdentity, trimmedDatasets)
         };
 
         var url = "GenerateToken";
@@ -268,6 +332,51 @@ public sealed class PowerBiEmbedService
         return (token, expiration);
     }
 
+    private static List<GenerateTokenV2Identity>? BuildIdentitiesForApi(
+        EffectiveIdentityInput? identity,
+        string[] datasetGuids)
+    {
+        if (identity is null || string.IsNullOrWhiteSpace(identity.Username))
+            return null;
+        if (datasetGuids.Length == 0)
+            throw new InvalidOperationException(
+                "Effective identity requires at least one dataset GUID (check SemanticDatasetId / PaginatedDatasetIds).");
+
+        return new List<GenerateTokenV2Identity>
+        {
+            new()
+            {
+                Username = identity.Username.Trim(),
+                Roles = identity.Roles.Count > 0 ? identity.Roles.ToList() : new List<string>(),
+                Datasets = datasetGuids.ToList()
+            }
+        };
+    }
+
+    private static object BuildV1TokenBody(EffectiveIdentityInput? identity, string? reportDatasetId)
+    {
+        if (identity is null || string.IsNullOrWhiteSpace(identity.Username))
+            return new { accessLevel = "View" };
+
+        if (string.IsNullOrWhiteSpace(reportDatasetId))
+            throw new InvalidOperationException(
+                "Effective identity on this token path requires a dataset id (report metadata or PowerBi:SemanticDatasetId / PaginatedDatasetIds).");
+
+        return new
+        {
+            accessLevel = "View",
+            identities = new object[]
+            {
+                new
+                {
+                    username = identity.Username.Trim(),
+                    roles = identity.Roles.Count > 0 ? identity.Roles.ToArray() : Array.Empty<string>(),
+                    datasets = new[] { reportDatasetId.Trim() }
+                }
+            }
+        };
+    }
+
     private static async Task EnsureSuccessOrThrowAsync(HttpResponseMessage response, CancellationToken ct)
     {
         if (response.IsSuccessStatusCode)
@@ -285,6 +394,21 @@ public sealed class PowerBiEmbedService
 
         [JsonPropertyName("reports")]
         public List<GenerateTokenV2ReportRef>? Reports { get; set; }
+
+        [JsonPropertyName("identities")]
+        public List<GenerateTokenV2Identity>? Identities { get; set; }
+    }
+
+    private sealed class GenerateTokenV2Identity
+    {
+        [JsonPropertyName("username")]
+        public required string Username { get; set; }
+
+        [JsonPropertyName("roles")]
+        public List<string> Roles { get; set; } = new();
+
+        [JsonPropertyName("datasets")]
+        public List<string> Datasets { get; set; } = new();
     }
 
     private sealed class GenerateTokenV2DatasetRef

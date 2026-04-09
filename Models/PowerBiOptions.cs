@@ -52,6 +52,12 @@ public sealed class PowerBiOptions
     public string PowerBiScope { get; set; } = "https://analysis.windows.net/powerbi/api/.default";
 
     /// <summary>
+    /// When true, <c>/api/embed-config</c> accepts <c>effectiveUsername</c> / <c>effectiveRoles</c> outside Development.
+    /// Default false; enable on a staging slot if you need RLS testing there.
+    /// </summary>
+    public bool EnableEffectiveIdentityTest { get; set; }
+
+    /// <summary>
     /// Trims whitespace, removes surrounding &lt; &gt; from secrets/UI copy-paste,
     /// and extracts the first GUID from messy report URL fragments when possible.
     /// </summary>

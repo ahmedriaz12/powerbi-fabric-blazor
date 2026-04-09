@@ -55,14 +55,47 @@ app.UseHttpsRedirection();
 app.UseAntiforgery();
 app.UseStaticFiles();
 
-app.MapGet("/api/embed-config", async (string kind, PowerBiEmbedService svc, CancellationToken ct) =>
+app.MapGet("/api/embed-config", async (
+    string kind,
+    string? effectiveUsername,
+    string? effectiveRoles,
+    PowerBiEmbedService svc,
+    IHostEnvironment env,
+    IOptions<PowerBiOptions> options,
+    CancellationToken ct) =>
 {
     if (!Enum.TryParse<EmbedReportKind>(kind, ignoreCase: true, out var k))
         return Results.BadRequest(new { error = "Invalid kind. Use Semantic or Paginated." });
 
+    EffectiveIdentityInput? identity = null;
+    if (!string.IsNullOrWhiteSpace(effectiveUsername))
+    {
+        var allow = env.IsDevelopment() || options.Value.EnableEffectiveIdentityTest;
+        if (!allow)
+        {
+            return Results.BadRequest(new
+            {
+                error = "effectiveUsername is only allowed when Environment=Development or PowerBi:EnableEffectiveIdentityTest=true."
+            });
+        }
+
+        string[] roleList = Array.Empty<string>();
+        if (!string.IsNullOrWhiteSpace(effectiveRoles))
+        {
+            roleList = effectiveRoles
+                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        }
+
+        identity = new EffectiveIdentityInput
+        {
+            Username = effectiveUsername.Trim(),
+            Roles = roleList
+        };
+    }
+
     try
     {
-        var dto = await svc.GetEmbedConfigAsync(k, ct).ConfigureAwait(false);
+        var dto = await svc.GetEmbedConfigAsync(k, identity, ct).ConfigureAwait(false);
         return Results.Ok(dto);
     }
     catch (Exception ex)

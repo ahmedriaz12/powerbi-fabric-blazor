@@ -20,6 +20,23 @@
         }
     </header>
 
+    @if (_config?.EffectiveIdentity is { } idEcho)
+    {
+        <div class="identity-echo" role="status">
+            <strong>Effective identity sent to Power BI</strong>
+            (echo from server — matches <code>identities[]</code> on GenerateToken):
+            <code>username=@idEcho.Username</code>
+            @if (idEcho.Roles is { Count: > 0 } r)
+            {
+                <span>· roles=@string.Join(", ", r)</span>
+            }
+            @if (idEcho.DatasetIds is { Count: > 0 } ds)
+            {
+                <span>· datasets=@string.Join(", ", ds)</span>
+            }
+        </div>
+    }
+
     @if (_error is not null)
     {
         <div class="alert" role="alert">@_error</div>
@@ -41,6 +58,12 @@
     [Parameter, EditorRequired]
     public EmbedReportKind Kind { get; set; }
 
+    [Parameter]
+    public string? EffectiveUsername { get; set; }
+
+    [Parameter]
+    public string? EffectiveRoles { get; set; }
+
     private readonly string _containerId = "pbi-" + Guid.NewGuid().ToString("n");
     private bool _loading = true;
     private string? _error;
@@ -55,7 +78,15 @@
         try
         {
             var kindStr = Kind == EmbedReportKind.Semantic ? "Semantic" : "Paginated";
-            var uri = Nav.ToAbsoluteUri($"/api/embed-config?kind={Uri.EscapeDataString(kindStr)}");
+            var qs = new List<string> { $"kind={Uri.EscapeDataString(kindStr)}" };
+            if (!string.IsNullOrWhiteSpace(EffectiveUsername))
+            {
+                qs.Add($"effectiveUsername={Uri.EscapeDataString(EffectiveUsername)}");
+                if (!string.IsNullOrWhiteSpace(EffectiveRoles))
+                    qs.Add($"effectiveRoles={Uri.EscapeDataString(EffectiveRoles)}");
+            }
+
+            var uri = Nav.ToAbsoluteUri($"/api/embed-config?{string.Join("&", qs)}");
             using var response = await Http.GetAsync(uri);
             var raw = await response.Content.ReadAsStringAsync();
             if (!response.IsSuccessStatusCode)

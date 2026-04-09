@@ -24,6 +24,17 @@ public sealed class EmbedConfigDto
 
     /// <summary>How the embed token was produced (for support).</summary>
     public string TokenMode { get; set; } = "";
+
+    /// <summary>Set when the token request included <c>identities</c> (RLS test / production embed).</summary>
+    public EffectiveIdentityEchoDto? EffectiveIdentity { get; set; }
+}
+
+/// <summary>Echo of what the server sent in the Power BI <c>identities</c> array for verification in the UI.</summary>
+public sealed class EffectiveIdentityEchoDto
+{
+    public string Username { get; set; } = "";
+    public IReadOnlyList<string> Roles { get; set; } = Array.Empty<string>();
+    public IReadOnlyList<string> DatasetIds { get; set; } = Array.Empty<string>();
 }
 
 internal sealed class PowerBiReportApiResponse
