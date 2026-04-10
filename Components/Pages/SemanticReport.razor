@@ -7,49 +7,5 @@
     <h1>Semantic report</h1>
     <p class="hint">Uses Power BI JS <code>loaded</code> / <code>rendered</code> for client timing.</p>
 
-    <section class="rls-test-panel" aria-label="RLS effective identity test">
-        <h2 class="rls-test-title">RLS / effective identity (demo)</h2>
-        <p class="hint">
-            Dev-only helper: values here are sent as <code>identities</code> on Generate Token (see README). Compare the echo
-            line to what your RLS DAX expects for <code>USERNAME()</code>.
-        </p>
-        <p class="hint rls-test-note">
-            Requires Development or <code>PowerBi:EnableEffectiveIdentityTest</code>. In production, set the user id on the server from your auth pipeline—not from this field.
-        </p>
-        <div class="rls-test-grid">
-            <label class="rls-label">
-                Effective user name
-                <input class="rls-input" type="text" @bind="_username" placeholder="e.g. portal-user-id or test-123" />
-            </label>
-            <label class="rls-label">
-                Optional RLS role names (comma-separated)
-                <input class="rls-input" type="text" @bind="_roles" placeholder="Must match role names on the dataset" />
-            </label>
-            <div class="rls-test-actions">
-                <button type="button" class="rls-apply" @onclick="ApplyAndReload">Apply &amp; reload embed</button>
-            </div>
-        </div>
-    </section>
-
-    <PowerBiReportViewer @key="@_viewerKey"
-                         Kind="EmbedReportKind.Semantic"
-                         EffectiveUsername="@_appliedUsername"
-                         EffectiveRoles="@_appliedRoles" />
+    <RlsEffectiveIdentityDemo Kind="EmbedReportKind.Semantic" KeyPrefix="semantic" />
 </div>
-
-@code {
-    private string _username = "";
-    private string _roles = "";
-    private string _appliedUsername = "";
-    private string _appliedRoles = "";
-    private int _reloadSeq;
-
-    private string _viewerKey => $"semantic-{_reloadSeq}";
-
-    private void ApplyAndReload()
-    {
-        _appliedUsername = _username.Trim();
-        _appliedRoles = _roles.Trim();
-        _reloadSeq++;
-    }
-}

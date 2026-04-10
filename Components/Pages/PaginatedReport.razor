@@ -10,5 +10,7 @@
         the sample uses a short heuristic timer after embed (see <code>powerbi-embed.js</code>).
     </p>
 
-    <PowerBiReportViewer @key="@("paginated")" Kind="EmbedReportKind.Paginated" />
+    <RlsEffectiveIdentityDemo Kind="EmbedReportKind.Paginated"
+                              KeyPrefix="paginated"
+                              AdditionalHint='For V2 tokens against semantic models, set PowerBi:PaginatedDatasetIds in appsettings (JSON array of dataset GUIDs).' />
 </div>

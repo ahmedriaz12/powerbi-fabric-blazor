@@ -12,7 +12,7 @@ Minimal **.NET 8** app that embeds **two** items from a **Fabric / Power BI** wo
 ## Run
 
 ```bash
-cd FabricEmbedSample
+cd powerbi-fabric-blazor
 dotnet restore
 dotnet run --launch-profile https
 ```
@@ -52,16 +52,18 @@ Typical pattern: one role in the dataset with something like `[UserKey] = USERNA
 
 ### Testing in this repo
 
-The **Semantic report** page has inputs for a test `username` and optional role names, plus **Apply & reload embed**. That only works when `ASPNETCORE_ENVIRONMENT=Development` or `PowerBi:EnableEffectiveIdentityTest` is `true` (see table above). The UI shows what the server sent so you can compare it to your model—**in production, derive the user from server-side auth**, not from a client field.
+**Semantic report** and **Paginated report** each include the same dev-only inputs (test `username`, optional role names, **Apply & reload embed**). That only works when `ASPNETCORE_ENVIRONMENT=Development` or `PowerBi:EnableEffectiveIdentityTest` is `true` (see table above). The viewer shows what the server sent so you can compare it to your model—**in production, derive the user from server-side auth**, not from a client field.
 
 Some datasets (notably certain DirectLake / Fabric setups) return **403** with *“Creating embed token with effective identity is not supported for this datasource”*. That comes from the Power BI API, not a bug in this app; check Microsoft’s current guidance for your storage mode and consider validating with a small imported model if you need to prove the flow end-to-end.
+
+**Waiting on tenant details:** If you see that 403, confirm the semantic model’s **storage mode** (Import, DirectQuery, Direct Lake, composite) and lineage. Once that’s known, the next step is to match **embed + RLS** to what that engine supports (effective identity, alternate token shape, or filtering outside the dataset).
 
 ## What this sample demonstrates
 
 - MSAL confidential client + `IHttpClientFactory` for Power BI REST
 - Semantic: Generate Token V2 when a dataset id is available (required for DirectLake)
 - Paginated: V1 or V2 depending on config; JS uses a short timer for readiness (paginated embed doesn’t expose reliable `rendered` events)
-- Optional RLS hook: `identities` on the token when testing from `/api/embed-config` + semantic page
+- Optional RLS hook: `identities` on the token when testing from `/api/embed-config` plus **Semantic** and **Paginated** pages
 - Layout: fixed-height embed host and iframe fill
 
 ## API (local)
@@ -75,6 +77,21 @@ For RLS testing (Development or `EnableEffectiveIdentityTest`): add `effectiveUs
 - [Embed content with service principal](https://learn.microsoft.com/power-bi/developer/embedded/embed-service-principal)
 - [Embed a paginated report](https://learn.microsoft.com/power-bi/paginated-reports/paginated-reports-embed)
 - [Generate token (REST)](https://learn.microsoft.com/rest/api/power-bi/embed-token/generate-token)
+
+## Verify a clean setup
+
+From an empty folder, clone the repo, configure user secrets, run:
+
+```bash
+git clone https://github.com/ahmedriaz12/powerbi-fabric-blazor.git
+cd powerbi-fabric-blazor
+dotnet restore
+dotnet user-secrets set "PowerBi:TenantId" "<guid>"
+# ... remaining user-secrets keys as in Configuration above ...
+dotnet run --launch-profile https
+```
+
+Then open `/semantic` and `/paginated`. If `dotnet user-secrets` is skipped, the app will fail at runtime with missing Power BI configuration—that is expected.
 
 ## License
 
