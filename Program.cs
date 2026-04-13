@@ -8,11 +8,19 @@ using Microsoft.Identity.Client;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.Configure<PowerBiOptions>(
-    builder.Configuration.GetSection(PowerBiOptions.SectionName));
-builder.Services.PostConfigure<PowerBiOptions>(static o => o.Normalize());
+builder.Services.AddOptions<PowerBiOptions>()
+    .Bind(builder.Configuration.GetSection(PowerBiOptions.SectionName))
+    .PostConfigure(static o => o.Normalize())
+    .Validate(o => !string.IsNullOrWhiteSpace(o.TenantId), "PowerBi:TenantId is required.")
+    .Validate(o => !string.IsNullOrWhiteSpace(o.ClientId), "PowerBi:ClientId is required.")
+    .Validate(o => !string.IsNullOrWhiteSpace(o.ClientSecret), "PowerBi:ClientSecret is required.")
+    .Validate(o => !string.IsNullOrWhiteSpace(o.WorkspaceId), "PowerBi:WorkspaceId is required.")
+    .Validate(o => !string.IsNullOrWhiteSpace(o.SemanticReportId), "PowerBi:SemanticReportId is required.")
+    .Validate(o => !string.IsNullOrWhiteSpace(o.PaginatedReportId), "PowerBi:PaginatedReportId is required.")
+    .ValidateOnStart();
 
 // Single MSAL confidential client per process so in-memory token cache is reused (client credentials).
+// Options are validated on start; factory receives valid PowerBiOptions.
 builder.Services.AddSingleton<IConfidentialClientApplication>(sp =>
 {
     var o = sp.GetRequiredService<IOptions<PowerBiOptions>>().Value;
@@ -41,8 +49,6 @@ builder.Services.ConfigureHttpJsonOptions(options =>
     options.SerializerOptions.Converters.Add(new JsonStringEnumConverter());
 });
 
-builder.Services.AddScoped<HttpClient>();
-
 var app = builder.Build();
 
 if (!app.Environment.IsDevelopment())
@@ -64,34 +70,17 @@ app.MapGet("/api/embed-config", async (
     IOptions<PowerBiOptions> options,
     CancellationToken ct) =>
 {
-    if (!Enum.TryParse<EmbedReportKind>(kind, ignoreCase: true, out var k))
-        return Results.BadRequest(new { error = "Invalid kind. Use Semantic or Paginated." });
+    if (!EmbedConfigRequestHelper.TryParseKind(kind, out var k, out var kindError))
+        return Results.BadRequest(new { error = kindError });
 
-    EffectiveIdentityInput? identity = null;
-    if (!string.IsNullOrWhiteSpace(effectiveUsername))
-    {
-        var allow = env.IsDevelopment() || options.Value.EnableEffectiveIdentityTest;
-        if (!allow)
-        {
-            return Results.BadRequest(new
-            {
-                error = "effectiveUsername is only allowed when Environment=Development or PowerBi:EnableEffectiveIdentityTest=true."
-            });
-        }
-
-        string[] roleList = Array.Empty<string>();
-        if (!string.IsNullOrWhiteSpace(effectiveRoles))
-        {
-            roleList = effectiveRoles
-                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        }
-
-        identity = new EffectiveIdentityInput
-        {
-            Username = effectiveUsername.Trim(),
-            Roles = roleList
-        };
-    }
+    if (!EmbedConfigRequestHelper.TryBuildEffectiveIdentity(
+            effectiveUsername,
+            effectiveRoles,
+            env,
+            options.Value,
+            out var identity,
+            out var identityError))
+        return Results.BadRequest(new { error = identityError });
 
     try
     {
@@ -100,16 +89,7 @@ app.MapGet("/api/embed-config", async (
     }
     catch (Exception ex)
     {
-        var detail = ex.Message;
-        if (detail.Contains("AADSTS7000215", StringComparison.Ordinal) ||
-            detail.Contains("Invalid client secret", StringComparison.OrdinalIgnoreCase))
-        {
-            detail +=
-                " — Fix: In Azure Portal → Microsoft Entra ID → App registrations → your app → Certificates & secrets: " +
-                "create a new client secret and copy the Value (password) shown once at creation, not the Secret ID column. " +
-                "dotnet user-secrets set \"PowerBi:ClientSecret\" \"<paste Value here>\"";
-        }
-
+        var detail = EmbedConfigRequestHelper.FormatEmbedExceptionMessage(ex);
         return Results.Problem(
             detail: detail,
             statusCode: StatusCodes.Status502BadGateway);

@@ -42,8 +42,6 @@ public sealed class PowerBiEmbedService
         EffectiveIdentityInput? effectiveIdentity = null,
         CancellationToken cancellationToken = default)
     {
-        ValidateOptions();
-
         var timings = new Dictionary<string, long>();
         var swTotal = Stopwatch.StartNew();
 
@@ -202,22 +200,6 @@ public sealed class PowerBiEmbedService
                 "add their dataset GUIDs to PowerBi:PaginatedDatasetIds in configuration (see Microsoft Learn: Embed a paginated report — Token considerations).",
                 ex);
         }
-    }
-
-    private void ValidateOptions()
-    {
-        if (string.IsNullOrWhiteSpace(_options.TenantId))
-            throw new InvalidOperationException("PowerBi:TenantId is required.");
-        if (string.IsNullOrWhiteSpace(_options.ClientId))
-            throw new InvalidOperationException("PowerBi:ClientId is required.");
-        if (string.IsNullOrWhiteSpace(_options.ClientSecret))
-            throw new InvalidOperationException("PowerBi:ClientSecret is required (use user-secrets for local dev).");
-        if (string.IsNullOrWhiteSpace(_options.WorkspaceId))
-            throw new InvalidOperationException("PowerBi:WorkspaceId is required.");
-        if (string.IsNullOrWhiteSpace(_options.SemanticReportId))
-            throw new InvalidOperationException("PowerBi:SemanticReportId is required.");
-        if (string.IsNullOrWhiteSpace(_options.PaginatedReportId))
-            throw new InvalidOperationException("PowerBi:PaginatedReportId is required.");
     }
 
     private async Task<string> AcquirePowerBiAccessTokenAsync(CancellationToken cancellationToken)
