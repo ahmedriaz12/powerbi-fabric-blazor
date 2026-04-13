@@ -1,6 +1,7 @@
 @rendermode InteractiveServer
-@inject HttpClient Http
-@inject NavigationManager Nav
+@inject PowerBiEmbedService EmbedService
+@inject IHostEnvironment HostEnv
+@inject IOptions<PowerBiOptions> PbiOptions
 @inject IJSRuntime JS
 @inject ILogger<PowerBiReportViewer> Logger
 
@@ -77,30 +78,24 @@
 
         try
         {
-            var kindStr = Kind == EmbedReportKind.Semantic ? "Semantic" : "Paginated";
-            var qs = new List<string> { $"kind={Uri.EscapeDataString(kindStr)}" };
-            if (!string.IsNullOrWhiteSpace(EffectiveUsername))
+            if (!EmbedConfigRequestHelper.TryBuildEffectiveIdentity(
+                    EffectiveUsername,
+                    EffectiveRoles,
+                    HostEnv,
+                    PbiOptions.Value,
+                    out var identity,
+                    out var identityError))
             {
-                qs.Add($"effectiveUsername={Uri.EscapeDataString(EffectiveUsername)}");
-                if (!string.IsNullOrWhiteSpace(EffectiveRoles))
-                    qs.Add($"effectiveRoles={Uri.EscapeDataString(EffectiveRoles)}");
-            }
-
-            var uri = Nav.ToAbsoluteUri($"/api/embed-config?{string.Join("&", qs)}");
-            using var response = await Http.GetAsync(uri);
-            var raw = await response.Content.ReadAsStringAsync();
-            if (!response.IsSuccessStatusCode)
-            {
-                _error = $"Embed API {(int)response.StatusCode}: {raw}";
+                _error = identityError;
                 _loading = false;
                 StateHasChanged();
                 return;
             }
 
-            _config = System.Text.Json.JsonSerializer.Deserialize<EmbedConfigDto>(raw, ApiJson.Options);
-            if (_config is null || string.IsNullOrEmpty(_config.EmbedToken))
+            _config = await EmbedService.GetEmbedConfigAsync(Kind, identity, default);
+            if (string.IsNullOrEmpty(_config.EmbedToken))
             {
-                _error = "Empty or invalid embed configuration from API.";
+                _error = "Empty embed configuration (no token).";
                 _loading = false;
                 StateHasChanged();
                 return;
@@ -128,7 +123,7 @@
         catch (Exception ex)
         {
             Logger.LogError(ex, "Embed failed");
-            _error = ex.Message;
+            _error = EmbedConfigRequestHelper.FormatEmbedExceptionMessage(ex);
             _loading = false;
         }
 
