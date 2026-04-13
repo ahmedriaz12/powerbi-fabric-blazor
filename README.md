@@ -23,10 +23,14 @@ Open **https://localhost:7288** (HTTP fallback: http://localhost:5288). Use the 
 
 **Do not commit secrets.** Use [user secrets](https://learn.microsoft.com/aspnet/core/security/app-secrets) (already wired via `UserSecretsId` in the `.csproj`) or environment variables in production.
 
+Required Power BI settings (`TenantId`, `ClientId`, `ClientSecret`, `WorkspaceId`, `SemanticReportId`, `PaginatedReportId`) are **validated when the app starts** (`ValidateOnStart`). If something is missing or blank after `Normalize()`, the process exits with `Microsoft.Extensions.Options.OptionsValidationException` (e.g. *PowerBi:ClientSecret is required.*). This is expected until you configure user-secrets or environment variables — the app will not listen for HTTP until validation passes.
+
+**Troubleshooting:** If startup fails with `OptionsValidationException` (e.g. *PowerBi:ClientSecret is required.*), configure [user secrets](https://learn.microsoft.com/aspnet/core/security/app-secrets) for all required keys:
+
 ```bash
 dotnet user-secrets set "PowerBi:TenantId" "<directory-tenant-guid>"
 dotnet user-secrets set "PowerBi:ClientId" "<app-client-guid>"
-dotnet user-secrets set "PowerBi:ClientSecret" "<secret-value-from-portal>"
+dotnet user-secrets set "PowerBi:ClientSecret" "<secret-value-from-portal — Value, not Secret ID>"
 dotnet user-secrets set "PowerBi:WorkspaceId" "<workspace-guid>"
 dotnet user-secrets set "PowerBi:SemanticReportId" "<report-guid>"
 dotnet user-secrets set "PowerBi:PaginatedReportId" "<report-guid>"
@@ -61,6 +65,8 @@ Some datasets (notably certain DirectLake / Fabric setups) return **403** with *
 ## What this sample demonstrates
 
 - MSAL confidential client + `IHttpClientFactory` for Power BI REST
+- Required `PowerBi` options validated **at startup** (`ValidateOnStart`) so misconfiguration fails fast with a clear message
+- Blazor report viewer calls `PowerBiEmbedService` **in-process** (no loopback `HttpClient` to `/api/embed-config`)
 - Semantic: Generate Token V2 when a dataset id is available (required for DirectLake)
 - Paginated: V1 or V2 depending on config; JS uses a short timer for readiness (paginated embed doesn’t expose reliable `rendered` events)
 - Optional RLS hook: `identities` on the token when testing from `/api/embed-config` plus **Semantic** and **Paginated** pages
